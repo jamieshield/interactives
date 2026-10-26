@@ -5,6 +5,8 @@ I created this visualisation to help them understand what sequential consistency
 
 This model of sequential consistency uses a **sequencer** to make it easier to see the global total order. Most implementations of sequential consistency work peer-to-peer (P2P), meaning they operate without a sequencer.
 
+[Sequential Consistency Simulation](seqConSimulation_single.html)
+
 Run the model and observe the following:
 
 - There are multiple withdrawals occurring concurrently. A new **red, negative** message (for example, `-$54`) is sent before the response from the previous message is received. This means the nodes are **non-blocking** and do not wait for an acknowledgement (ACK) before sending another message.
