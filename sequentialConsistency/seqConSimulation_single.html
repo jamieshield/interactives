@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SeqCon — Global Sequencer (rAF DOM mover; no clamps, no CSS anim)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+ :root{
+  --bg:#0f172a; --panel:#0b1220; --ink:#e5e7eb; --muted:#94a3b8;
+  --left:#60a5fa; --right:#f472b6; --seq:#a3e635; --accent:#22d3ee;
+ }
+ *{box-sizing:border-box}
+ html,body{height:100%}
+ body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Inter,Arial,sans-serif}
+ header{padding:12px 16px;border-bottom:1px solid #1f2937;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+ h1{margin:0;font-size:18px}
+ .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+ button,input{background:#111827;color:var(--ink);border:1px solid #334155;border-radius:8px;padding:6px 10px}
+ button:hover{border-color:#475569;cursor:pointer}
+ input[type=number],input[type=range]{padding:4px 6px}
+ .note{color:var(--muted);font-size:12px}
+ main{display:grid;grid-template-columns:1fr 380px 1fr;gap:16px;padding:16px;position:relative}
+ .panel{background:var(--panel);border:1px solid #1f2937;border-radius:12px;overflow:hidden}
+ .panel h2{margin:0;padding:10px 12px;border-bottom:1px solid #1f2937;font-size:14px;color:#cbd5e1}
+ .panel .inner{padding:10px 12px}
+ .lane{min-height:220px}
+ .stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+ .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #334155;font-size:12px;color:#cbd5e1}
+ .pill.left{border-color:#1d4ed8;color:#93c5fd}
+ .pill.right{border-color:#be185d;color:#f9a8d4}
+ .pill.seq{border-color:#3f6212;color:#bef264}
+ .balance{font-weight:700}
+ .log{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#070f1b;border:1px solid #28354b;border-radius:8px;padding:8px;max-height:160px;overflow:auto;white-space:pre-wrap}
+ .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+ .sep{height:8px}
+ .kpi{font-size:12px;color:#9aa7b3}
+ canvas{width:100%; height:140px; display:block; background:#061021; border:1px solid #28354b; border-radius:8px}
+
+ /* Fixed overlay for flying messages (viewport coordinate space) */
+ #animLayer{
+   position:fixed; left:0; top:0; width:100vw; height:100vh; pointer-events:none; z-index:1000;
+ }
+
+ /* The moving token (no CSS transitions set!) */
+ .msg{
+  position:absolute;
+  min-width:26px; min-height:26px; border-radius:999px;
+  display:flex; align-items:center; justify-content:center;
+  border:2px solid #1f2937; background:#0b1b2e; color:#d1d5db; font-weight:700;
+  box-shadow:0 2px 10px rgba(0,0,0,.4);
+ }
+ .msg.left { background:#0b1830; color:#93c5fd; border-color:#1e40af }
+ .msg.right{ background:#2b0b26; color:#f9a8d4; border-color:#9d174d }
+ .msg.ack  { background:#0b2b14; color:#bef264; border-color:#166534 }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sequential Consistency — Global Sequencer Broadcast</h1>
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="resetBtn">Reset</button>
+
+    <label>Left Latency (ms):
+      <input id="latLeft" type="number" value="2000" step="10" style="width:90px">
+    </label>
+
+    <label>Right Latency (ms):
+      <input id="latRight" type="number" value="5000" step="10" style="width:90px">
+    </label>
+
+    <label>Start Balance:
+      <input id="startBal" type="number" value="100" step="10" style="width:90px">
+    </label>
+
+    <label>Ops/sec per node:
+      <input id="rate" type="range" min="0" max="2" step="0.1" value="0.2">
+      <span id="rateVal" class="sliderValue">0.2</span>
+    </label>
+
+    <span class="note">Sequencer assigns total order; broadcasts carry per‑op balance snapshots.</span>
+  </div>
+</header>
+
+<main>
+  <!-- LEFT NODE -->
+  <section class="panel" id="leftPanel">
+    <h2>Left Node <span class="pill left">Deposits only</span></h2>
+    <div class="inner lane">
+      <div class="stat">
+        <div>Local balance: <span id="leftBal" class="balance">—</span></div>
+        <div class="kpi">Pending: <span id="leftPending">0</span></div>
+      </div>
+      <div class="row">
+        <button id="leftDepositBtn">Deposit +$</button>
+      </div>
+      <div class="sep"></div>
+      <canvas id="chartLeft" width="600" height="140"></canvas>
+      <div class="sep"></div>
+      <div class="log" id="leftLog"></div>
+    </div>
+  </section>
+
+  <!-- SEQUENCER -->
+  <section class="panel" id="seqPanel">
+    <h2>Global Sequencer <span class="pill seq">Broadcast to both</span></h2>
+    <div class="inner lane">
+      <div class="stat">
+        <div>Global balance: <span id="seqBal" class="balance">—</span></div>
+        <div class="kpi">Processed: <span id="seqCount">0</span></div>
+      </div>
+      <div class="sep"></div>
+      <canvas id="chartSeq" width="600" height="140"></canvas>
+      <div class="sep"></div>
+      <div class="log" id="seqLog"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT NODE -->
+  <section class="panel" id="rightPanel">
+    <h2>Right Node <span class="pill right">Withdrawals only</span></h2>
+    <div class="inner lane">
+      <div class="stat">
+        <div>Local balance: <span id="rightBal" class="balance">—</span></div>
+        <div class="kpi">Pending: <span id="rightPending">0</span></div>
+      </div>
+      <div class="row">
+        <button id="rightWithdrawBtn">Withdraw -$</button>
+      </div>
+      <div class="sep"></div>
+      <canvas id="chartRight" width="600" height="140"></canvas>
+      <div class="sep"></div>
+      <div class="log" id="rightLog"></div>
+    </div>
+  </section>
+</main>
+
+<!-- Animation overlay for DOM tokens -->
+<div id="animLayer"></div>
+
+<script>
+/* =========================== Core Model ============================= */
+const ui = {
+  left:  { panel: q('#leftPanel'),  bal: q('#leftBal'),  log: q('#leftLog'),  pending: q('#leftPending'),  chart: q('#chartLeft') },
+  right: { panel: q('#rightPanel'), bal: q('#rightBal'), log: q('#rightLog'), pending: q('#rightPending'), chart: q('#chartRight') },
+  seq:   { panel: q('#seqPanel'),   bal: q('#seqBal'),   log: q('#seqLog'),   count: q('#seqCount'),       chart: q('#chartSeq') },
+  btn:   { start: q('#startBtn'), pause: q('#pauseBtn'), reset: q('#resetBtn'),
+           leftDep: q('#leftDepositBtn'), rightWit: q('#rightWithdrawBtn') },
+  ctl:   { latLeft: q('#latLeft'), latRight: q('#latRight'), startBal: q('#startBal'), rate: q('#rate'), rateVal: q('#rateVal') },
+  layer: { anim: q('#animLayer') }
+};
+const NODES = { LEFT:'L', RIGHT:'R' };
+
+let latLeft  = 2000; // ms
+let latRight = 5000; // ms
+let running = false;
+let opId = 1, seqNo = 0;
+let t0 = performance.now();
+
+const state = {
+  seqBalance: 100,
+  left:  { localBalance: 100, pending: 0, nextSeq: 1, buffer: {} },
+  right: { localBalance: 100, pending: 0, nextSeq: 1, buffer: {} }
+};
+
+/* ===== Utils ===== */
+function q(s){ return document.querySelector(s); }
+function now(){ return performance.now(); }
+function randInt(a,b){ return a + Math.floor(Math.random()*(b-a+1)); }
+function ts(){ return new Date().toLocaleTimeString(); }
+
+/* ===== Logging ===== */
+function logNode(which, text){
+  const box = which===NODES.LEFT ? ui.left.log : ui.right.log;
+  box.textContent += `[${ts()}] ${text}\n`; box.scrollTop = box.scrollHeight;
+}
+function logSeq(text){
+  ui.seq.log.textContent += `[${ts()}] ${text}\n`; ui.seq.log.scrollTop = ui.seq.log.scrollHeight;
+}
+
+/* ===== UI ===== */
+function refreshUI(){
+  ui.left.bal.textContent  = `$${state.left.localBalance}`;
+  ui.right.bal.textContent = `$${state.right.localBalance}`;
+  ui.left.pending.textContent  = state.left.pending;
+  ui.right.pending.textContent = state.right.pending;
+  ui.seq.bal.textContent = `$${state.seqBalance}`;
+  ui.seq.count.textContent = String(seqNo);
+}
+ui.ctl.rate.addEventListener('input', () => { ui.ctl.rateVal.textContent = ui.ctl.rate.value; });
+
+/* ===== Charts ===== */
+const charts = {
+  left:  { ctx: ui.left.chart.getContext('2d'),  data: [] },
+  right: { ctx: ui.right.chart.getContext('2d'), data: [] },
+  seq:   { ctx: ui.seq.chart.getContext('2d'),   data: [] }
+};
+function addPoint(which, balance){
+  const t = (now() - t0) / 1000;
+  charts[which].data.push({t, y:balance});
+  drawChart(which);
+}
+function drawChart(which){
+  const c = charts[which], ctx = c.ctx, W = ctx.canvas.width, H = ctx.canvas.height, data = c.data;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0a1528'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = '#223455'; ctx.lineWidth = 1;
+  for(let x=0;x<=W;x+=60){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0;y<=H;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  if(data.length===0) return;
+  const maxT = Math.max(10, data[data.length-1].t);
+  const ys = data.map(p=>p.y), minY = Math.min(...ys)*0.95, maxY = Math.max(...ys)*1.05;
+  const sx = W/maxT, sy = (H-16)/Math.max(1,(maxY-minY));
+  const lx = (sec)=> sec*sx, ly = (val)=> H-8 - (val-minY)*sy;
+  ctx.beginPath(); ctx.lineWidth = 2.2;
+  ctx.strokeStyle = which==='left' ? '#60a5fa' : which==='right' ? '#f472b6' : '#a3e635';
+  data.forEach((p,i)=>{ const x=lx(p.t), y=ly(p.y); i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.stroke();
+  const last = data[data.length-1];
+  ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(lx(last.t), ly(last.y), 3.5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#b1bed1'; ctx.font='11px ui-monospace,monospace';
+  ctx.fillText((which==='left'?'Left':which==='right'?'Right':'Global')+`: $${last.y}`, 8, 12);
+}
+
+/* =================== rAF DOM mover (no CSS animations) =============== */
+/*
+  - Creates a .msg div inside #animLayer.
+  - Measures start/end X from bounding rects (viewport space).
+  - Chooses a constant Y track for all dots (Sequencer center at start time).
+  - Moves by directly setting el.style.left/top each frame.
+*/
+const Anim = (() => {
+  const layer = ui.layer.anim;
+  const R = 13;                 // visual "radius" in px
+  const active = new Set();     // tracks all running dots
+  let rafId = 0;
+
+  function ensureRAF(){
+    if(rafId) return;
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function tick(ts){
+    rafId = 0;
+    if(active.size===0) return;
+    for(const a of Array.from(active)){
+      const elapsed = ts - a.t0;
+      const p = (a.ms > 0) ? Math.min(1, elapsed / a.ms) : 1;
+      const x = a.sx + (a.ex - a.sx) * p;
+      // y is constant per message
+      a.el.style.left = (x - R) + 'px';
+      a.el.style.top  = (a.y - R) + 'px';
+
+      if(p >= 1){
+        active.delete(a);
+        a.el.remove();
+        if(a.done) { try{ a.done(); }catch{} }
+      }
+    }
+    if(active.size) rafId = requestAnimationFrame(tick);
+  }
+
+  function animate(fromEl, toEl, label, ms, cssClass, done){
+    // Measure once per animation; viewport-relative
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+
+    const sx = fr.left + fr.width/2;
+    const ex = tr.left + tr.width/2;
+
+    // Constant track height = current Sequencer center
+    const seqRect = ui.seq.panel.getBoundingClientRect();
+    const y = seqRect.top + seqRect.height/2;
+
+    // Create the dot at start position
+    const el = document.createElement('div');
+    el.className = 'msg ' + (cssClass || '');
+    el.textContent = label;
+    el.style.left = (sx - R) + 'px';
+    el.style.top  = (y  - R) + 'px';
+    layer.appendChild(el);
+
+    // If there's effectively no movement or time, complete immediately
+    const dx = ex - sx;
+    if(!isFinite(dx) || Math.abs(dx) < 0.5 || !(ms > 0)){
+      el.remove();
+      done && done();
+      return;
+    }
+
+    // Register and run
+    active.add({ el, sx, ex, y, ms, t0: performance.now(), done });
+    ensureRAF();
+  }
+
+  return { animate };
+})();
+
+/* Bridge for the rest of the app */
+function animateMessage(fromEl, toEl, label, ms, cssClass, done){
+  Anim.animate(fromEl, toEl, label, ms, cssClass, done);
+}
+
+/* ===== Per-node resequencing ===== */
+function enqueueDelivery(which, evt){
+  const node = (which===NODES.LEFT? state.left : state.right);
+  node.buffer[evt.seq] = evt;
+  tryDeliver(which);
+}
+function tryDeliver(which){
+  const node = (which===NODES.LEFT? state.left : state.right);
+  while(node.buffer[node.nextSeq]){
+    const evt = node.buffer[node.nextSeq]; delete node.buffer[node.nextSeq];
+    (which===NODES.LEFT? state.left : state.right).localBalance = evt.newBalance;
+    if(evt.origin===which){ node.pending = Math.max(0, node.pending-1); }
+    logNode(which, `apply [seq#${evt.seq}] ${evt.ok?'✔':'✖'} ${evt.label} → $${(which===NODES.LEFT?state.left.localBalance:state.right.localBalance)}`);
+    addPoint(which===NODES.LEFT?'left':'right', (which===NODES.LEFT?state.left.localBalance:state.right.localBalance));
+    refreshUI();
+    node.nextSeq++;
+  }
+}
+
+/* ===== Operation pipeline ===== */
+function submitDepositFromLeft(amount){ clientPropose(NODES.LEFT,'dep',amount); }
+function submitWithdrawFromRight(amount){ clientPropose(NODES.RIGHT,'wit',amount); }
+
+function clientPropose(which, kind, amount){
+  const from = which===NODES.LEFT ? ui.left.panel : ui.right.panel;
+  const to   = ui.seq.panel;
+  const oneWay = which===NODES.LEFT ? latLeft : latRight;
+  const id = opId++;
+  (which===NODES.LEFT? state.left : state.right).pending++;
+  refreshUI();
+
+  const label = kind==='dep'? `+$${amount}` : `-$${amount}`;
+  logNode(which, `request ${label} (op#${id}) → sequencer`);
+
+  animateMessage(from, to, label, oneWay, (which===NODES.LEFT?'left':'right'), () => {
+    // Sequencer receives request
+    const seq = ++seqNo;
+    let ok = true;
+    const before = state.seqBalance;
+    let after = before;
+
+    if(kind==='dep') after = before + amount;
+    else { if(before >= amount) after = before - amount; else ok=false; }
+
+    if(ok) state.seqBalance = after;
+
+    logSeq(`#${seq} ${which} ${label} => ${ok?'OK':'FAIL'} (bal → $${state.seqBalance})`);
+    refreshUI();
+    addPoint('seq', state.seqBalance);
+
+    const evt = { seq, ok, newBalance: state.seqBalance, label, origin: which };
+
+    // Broadcasts (same constant-height track, independent of duration size)
+    animateMessage(ui.seq.panel, ui.left.panel,  ok?`✔ ${label}`:`✖ ${label}`, latLeft,  'ack', () => enqueueDelivery(NODES.LEFT,  evt));
+    animateMessage(ui.seq.panel, ui.right.panel, ok?`✔ ${label}`:`✖ ${label}`, latRight, 'ack', () => enqueueDelivery(NODES.RIGHT, evt));
+  });
+}
+
+/* ===== Auto traffic ===== */
+let autoTimers=[];
+function startAuto(){
+  stopAuto();
+  const rate = parseFloat(ui.ctl.rate.value || '0');
+  if(rate<=0) return;
+
+  const schedule = (fn)=>{
+    const mean = 1000/rate;
+    const jitter = (Math.random()*400)-200; // -200..+200
+    const next = Math.round(mean + jitter);
+    const t = setTimeout(()=>{ if(running){ fn(); schedule(fn); } }, next>0?next:0);
+    autoTimers.push(t);
+  };
+  schedule(()=> submitDepositFromLeft(randInt(5,40)));
+  schedule(()=> submitWithdrawFromRight(randInt(20,60)));
+}
+function stopAuto(){ autoTimers.forEach(clearTimeout); autoTimers=[]; }
+
+/* ===== Controls ===== */
+ui.btn.start.addEventListener('click', () => {
+  if(running) return; running = true;
+
+  // No clamps: just parse the inputs or fall back to defaults
+  latLeft  = parseInt(ui.ctl.latLeft.value  || '2000',10);
+  latRight = parseInt(ui.ctl.latRight.value || '5000',10);
+
+  startAuto();
+});
+ui.btn.pause.addEventListener('click', () => { running=false; stopAuto(); });
+ui.btn.reset.addEventListener('click', () => {
+  running=false; stopAuto();
+  opId=1; seqNo=0; t0=now();
+
+  const startBal = parseInt(ui.ctl.startBal.value || '100',10);
+  state.seqBalance = startBal;
+  state.left.localBalance = startBal; state.right.localBalance = startBal;
+  state.left.pending = state.right.pending = 0;
+  state.left.nextSeq = state.right.nextSeq = 1;
+  state.left.buffer = {}; state.right.buffer = {};
+
+  charts.left.data  = [{t:0,y:startBal}];
+  charts.right.data = [{t:0,y:startBal}];
+  charts.seq.data   = [{t:0,y:startBal}];
+  drawChart('left'); drawChart('right'); drawChart('seq');
+
+  ui.seq.log.textContent=''; ui.left.log.textContent=''; ui.right.log.textContent='';
+  logSeq(`reset: global balance = $${startBal}`);
+  refreshUI();
+});
+
+ui.btn.leftDep.addEventListener('click', () => submitDepositFromLeft(randInt(5,40)));
+ui.btn.rightWit.addEventListener('click', () => submitWithdrawFromRight(randInt(20,60)));
+
+ui.ctl.latLeft.addEventListener('change',  () => { latLeft  = parseInt(ui.ctl.latLeft.value  || '2000',10); });
+ui.ctl.latRight.addEventListener('change', () => { latRight = parseInt(ui.ctl.latRight.value || '5000',10); });
+
+/* ===== Boot ===== */
+(function boot(){
+  const startBal = parseInt(ui.ctl.startBal.value || '100', 10);
+  state.seqBalance = startBal;
+  state.left.localBalance = startBal; state.right.localBalance = startBal;
+
+  charts.left.data  = [{t:0,y:startBal}];
+  charts.right.data = [{t:0,y:startBal}];
+  charts.seq.data   = [{t:0,y:startBal}];
+
+  drawChart('left'); drawChart('right'); drawChart('seq');
+
+  logSeq(`boot: global balance = $${startBal}`);
+  logNode(NODES.LEFT,  `left latency = ${parseInt(ui.ctl.latLeft.value || '2000',10)} ms (one‑way)`);
+  logNode(NODES.RIGHT, `right latency = ${parseInt(ui.ctl.latRight.value || '5000',10)} ms (one‑way)`);
+  refreshUI();
+})();
+</script>
+</body>
+</html>
