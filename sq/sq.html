@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Sequence Diagram Generator</title>
+	<script src="sq.js"></script>
+</head>
+<body>
+
+<h1>Sequence diagram editor</h1>
+<div>
+This editor allows the modelling of lag, reordering, receipt and delivery of messages between nodes.
+This prototype helped students to visualise consistency models such as linearisability, and sequential and causal consistency.
+<p/>
+The notation is inspired by PlantUML.
+Unfortunately PlantUML does not provide sufficient support for overlapping messages.
+The code is genAI.
+<p/>
+
+<script>
+setupSeqDia("seqDiag1",
+`participants_width 55
+participants_x 10
+font_size 10
+font_size_title 14
+participant "Agent A" as A
+participant "Agent B" as B
+participant C
+A ->(40) C: start=m1; mid=mid;end=end;right= right;left=left; leftend_=leftend _ ; midhor=midhor;
+& C (40)-[#blue]-> A : ACK
+& C 40 circle
+& C (40)-[#red]->(20) C : midhor=deliver;
+A->C : new block
+space 5
+A->C
+' comment
+`,{'button':true})
+</script>
+</div>
+
+Message are denote by participant -&gt; participant.
+Delays are denoted by parenthesised numbers before or after the arrow.
+The ampersand (&amp;) starts the next message relative to the previous message.
+<p/>
+
+The above is a div that is followed by a script. The script attaches the editor to the current element, i.e. div.
+There is a options dictionary which configures the button. A simulated button was needed to use the editor inside
+Moodle quizzes which stripped true buttons.
+<p/>
+
+As a step towards understanding sequential and causal consistency models, the receival of messages was distinguished from the delivery of messages.
+Reflexive, dotted red lines were used to denote message delivery.
+<div>
+<script>
+setupSeqDia("seqDiag2",
+`participant "Agent A" as A
+participant "Agent B" as B
+A ->(30) B : start= buy 1;
+& A (20)-> B : start= buy 2;
+& B (20)-[#red]->(20) B : right=   deliver; left=buffer
+`,{'button':false})
+</script>
+</div>
+
+The above uses an emulated button.
+
+
+
+<!-- coit13229DisApp\sq.html -->
+<!--textarea id="seqDiag1" rows="10" cols="80" placeholder="Enter your UML here...">
+participants_width 55
+participants_x 10
+font_size 10
+font_size_title 14
+participant "Agent A" as A
+participant "Agent B" as B
+participant C
+A ->(40) C: start=m1; mid=mid;end=end;right= right;left=left; leftend_=leftend ; midhor=midhor;
+& C (40)-[#blue]-> A : ACK
+& C (40)-[#red]->(20) C : midhor=deliver;
+A->C : new block
+' comment
+</textarea><br>
+    <button onclick="generateSVG('seqDiag1')">Generate SVG</button>
+	<div>&nbsp;</div>
+    <div id="output_seqDiag1"></div>
+-->
+</body>
+</html>
+
