@@ -1,0 +1,434 @@
+
+<script type="importmap">
+{"imports": {"three": "https://unpkg.com/three@0.178.0/build/three.module.js"}}
+</script>
+
+<style>
+body{font-family:Arial,sans-serif;margin:20px}
+#layout{display:flex;gap:20px;flex-wrap:wrap}
+#view{width:500px;height:500px;border:1px solid #888}
+.controls{display:grid;grid-template-columns:40px 220px 120px;gap:6px;align-items:center}
+input[type=text]{font-family:monospace}
+#previewHCT{width:140px;height:140px;border:1px solid #000;margin-top:20px;background:#fff}
+</style>
+</head>
+<body>
+
+<h2>(Approximate) HCT</h2>
+
+This prototype is used to motivate students to move from RGB to HCT by helping them understand how a colour palette can be generated using HCT. The code is genAI.
+<p/>
+For example, first, choose a seed hue.
+Your primary colours could be dark tone text contrasted on light tone background.
+Your secondary colours could use a nearby, analogous hue with subdued chroma.
+Again you will use a dark toned text contrasted on a light toned background.
+<p/>
+<ul>
+<li>Tone: use large adjustments of Tone for readability by generating a foreground text colour that contrasts with its background
+<li>Hue: small adjustments of the primary Hue provide harmonious, analogous, secondary colours
+<li>Chroma: reducing the chroma produces subdued secondary colours which allows the user's attention to be directed to the more important primary elements.
+</ul>
+
+<div id="layout">
+
+<div id="view"></div>
+
+<div>
+
+<div class="controls">
+
+<label>H</label>
+<input id="hSlider" type="range" min="0" max="360">
+<input id="hText">
+
+<label>C</label>
+<input id="cSlider" type="range" min="0" max="100">
+<input id="cText">
+
+<label>T</label>
+<input id="tSlider" type="range" min="0" max="100">
+<input id="tText">
+
+<label>A</label>
+<input id="aSlider" type="range" min="0" max="255" value="255" style="display:none;">
+<input id="aText" style="display:none;">
+
+</div>
+
+<br>
+
+HCT<br>
+<input id="hctText" style="width:220px">
+
+<br><br>
+
+ARGB<br>
+<input id="argbText" style="width:220px">
+
+<div id="previewHCT"></div>
+
+</div>
+
+</div>
+
+<script type="module">
+
+import * as THREE from 'three';
+import {OrbitControls} from 'https://unpkg.com/three@0.178.0/examples/jsm/controls/OrbitControls.js';
+
+function pseudoHctHue(h){
+const p=[
+[0,330],[30,0],[110,60],[170,120],
+[240,200],[270,240],[330,300],[360,330]
+];
+
+for(let i=0;i<p.length-1;i++){
+const[h1,s1]=p[i];
+const[h2,s2]=p[i+1];
+
+if(h>=h1&&h<=h2){
+const t=(h-h1)/(h2-h1);
+
+let d=s2-s1;
+if(d>180)d-=360;
+if(d<-180)d+=360;
+
+return(s1+d*t+360)%360;
+}
+}
+
+return h;
+}
+
+function maxRadiusForTone(t){
+return Math.pow(Math.sin(t/100*Math.PI),0.7);
+}
+
+function hslToRgb(h,c,t){
+
+const sat=Math.min(
+100,
+Math.pow(c/100,0.7)*100
+);
+
+const light=t;
+
+const k=n=>(n+h/30)%12;
+
+const a=
+sat*Math.min(light,100-light)/100;
+
+const f=n=>
+light-
+a*
+Math.max(
+-1,
+Math.min(
+k(n)-3,
+Math.min(9-k(n),1)
+)
+);
+
+return{
+r:Math.max(0,Math.min(255,Math.round(f(0)*255/100))),
+g:Math.max(0,Math.min(255,Math.round(f(8)*255/100))),
+b:Math.max(0,Math.min(255,Math.round(f(4)*255/100)))
+};
+}
+
+function hex2(v){
+  return Math.round(v).toString(16).toUpperCase().padStart(2,"0");
+}
+
+const view=document.getElementById("view");
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xf8f8f8);
+
+const camera=new THREE.PerspectiveCamera(
+45,
+view.clientWidth/view.clientHeight,
+0.1,
+100
+);
+
+camera.position.set(1.5,1.5,1.5);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+
+renderer.setSize(
+view.clientWidth,
+view.clientHeight
+);
+
+view.appendChild(renderer.domElement);
+
+const controls=new OrbitControls(
+camera,
+renderer.domElement
+);
+
+controls.enableDamping=true;
+
+scene.add(
+new THREE.AmbientLight(
+0xffffff,
+2
+)
+);
+
+const radial=96;
+const vertical=40;
+
+const geometry=
+new THREE.CylinderGeometry(
+1,1,2,
+radial,
+vertical,
+true
+);
+
+const pos=geometry.attributes.position;
+const colours=[];
+
+for(let i=0;i<pos.count;i++){
+
+const x=pos.getX(i);
+const y=pos.getY(i);
+const z=pos.getZ(i);
+
+const tone=(y+1)*50;
+
+const hue=(
+Math.atan2(z,x)
+*180/Math.PI+360
+)%360;
+
+const scale=maxRadiusForTone(tone);
+
+pos.setX(i,x*scale);
+pos.setZ(i,z*scale);
+
+const rgb=
+hslToRgb(
+pseudoHctHue(hue),
+100,
+tone
+);
+
+colours.push(
+rgb.r/255,
+rgb.g/255,
+rgb.b/255
+);
+}
+
+geometry.setAttribute(
+"color",
+new THREE.Float32BufferAttribute(
+colours,
+3
+)
+);
+
+geometry.computeVertexNormals();
+
+const gamut=
+new THREE.Mesh(
+geometry,
+new THREE.MeshPhongMaterial({
+vertexColors:true,
+transparent:true,
+opacity:0.5,
+side:THREE.DoubleSide
+})
+);
+
+scene.add(gamut);
+
+for(const tone of []){
+
+const r=maxRadiusForTone(tone);
+
+const pts=[];
+
+for(let a=0;a<=360;a+=5){
+
+const rad=a*Math.PI/180;
+
+pts.push(
+new THREE.Vector3(
+Math.cos(rad)*r,
+tone/50-1,
+Math.sin(rad)*r
+)
+);
+}
+
+scene.add(
+new THREE.Line(
+new THREE.BufferGeometry().setFromPoints(pts),
+new THREE.LineBasicMaterial({color:0x444444})
+)
+);
+}
+
+const marker=
+new THREE.Mesh(
+new THREE.SphereGeometry(0.06,24,24),
+new THREE.MeshBasicMaterial({color:0xffffff})
+);
+
+scene.add(marker);
+
+const hSlider=document.getElementById("hSlider");
+const cSlider=document.getElementById("cSlider");
+const tSlider=document.getElementById("tSlider");
+const aSlider=document.getElementById("aSlider");
+
+const hText=document.getElementById("hText");
+const cText=document.getElementById("cText");
+const tText=document.getElementById("tText");
+const aText=document.getElementById("aText");
+
+const hctText=document.getElementById("hctText");
+const argbText=document.getElementById("argbText");
+
+const preview=document.getElementById("previewHCT");
+
+let h=0;
+let c=100;
+let t=50;
+let a=255;
+
+function updateUI(){
+
+hSlider.value=h;
+cSlider.value=c;
+tSlider.value=t;
+aSlider.value=a;
+
+hText.value=Math.round(h);
+cText.value=Math.round(c);
+tText.value=Math.round(t);
+aText.value=Math.round(a);
+
+hctText.value=
+`Hct.from(${Math.round(h)},${Math.round(c)},${Math.round(t)})`;
+
+const rgb=
+hslToRgb(
+pseudoHctHue(h),
+c,
+t
+);
+
+argbText.value=
+"0x"+
+hex2(a)+
+hex2(rgb.r)+
+hex2(rgb.g)+
+hex2(rgb.b);
+
+preview.style.backgroundColor=
+`rgba(${rgb.r},${rgb.g},${rgb.b},${a/255})`;
+
+marker.material.color.setRGB(
+rgb.r/255,
+rgb.g/255,
+rgb.b/255
+);
+
+const angle=h*Math.PI/180;
+
+const radius=maxRadiusForTone(t)*c/100;
+
+marker.position.set(
+Math.cos(angle)*radius,
+t/50-1,
+Math.sin(angle)*radius
+);
+}
+
+hSlider.oninput=function(){h=+hSlider.value;updateUI();};
+cSlider.oninput= function (){c=+cSlider.value;updateUI();};
+tSlider.oninput= function (){t=+tSlider.value;updateUI();};
+aSlider.oninput= function (){a=+aSlider.value;updateUI();};
+
+hText.addEventListener("change",function(){h=Number(hText.value);updateUI();});
+cText.addEventListener("change", function(){c=Number(cText.value);updateUI();});
+tText.addEventListener("change", function(){t=Number(tText.value);updateUI();});
+aText.addEventListener("change", function(){a=Number(aText.value);updateUI();});
+
+const raycaster=new THREE.Raycaster();
+const mouse=new THREE.Vector2();
+
+renderer.domElement.addEventListener(
+"pointerdown",
+e=>{
+
+const rect=
+renderer.domElement.getBoundingClientRect();
+
+mouse.x=
+((e.clientX-rect.left)/rect.width)*2-1;
+
+mouse.y=
+-((e.clientY-rect.top)/rect.height)*2+1;
+
+raycaster.setFromCamera(
+mouse,
+camera
+);
+
+const hits=
+raycaster.intersectObject(gamut);
+
+if(!hits.length)return;
+
+const p=hits[0].point;
+
+t=Math.max(
+0,
+Math.min(
+100,
+(p.y+1)*50
+)
+);
+
+h=(
+Math.atan2(
+p.z,
+p.x
+)*180/Math.PI+360
+)%360;
+
+const maxC=
+maxRadiusForTone(t);
+
+c=Math.max(
+0,
+Math.min(
+100,
+Math.sqrt(
+p.x*p.x+
+p.z*p.z
+)/maxC*100
+)
+);
+
+updateUI();
+}
+);
+
+function animate(){
+requestAnimationFrame(animate);
+controls.update();
+renderer.render(scene,camera);
+}
+
+updateUI();
+animate();
+
+</script>
+
