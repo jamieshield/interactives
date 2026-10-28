@@ -1,0 +1,217 @@
+<script>
+var hideOnInit=true;
+var teamsCnt=4;
+
+var risks=[
+	{ risk: "Schedule flaws",
+	  level: "Higher",
+	  tooLow: "You underestimated the time it would take for Mr Spick to cable the space cafeteria - he ran out of oxygen.",
+	  person: "Spick",
+	 },
+	
+	 
+	 { risk: "Incorrect specifications",
+	  level: "Higher",
+	  tooLow: "The wireless access points you ordered were insufficiently powered to handle the distance between the principal's office and metal-work and plasma-work shops. Despite the AI-bot detecting that Scitty was cut in half by a plasma cutter, the alarm notification was never recieved by the principal.",
+	  person: "Scitty"
+	 },
+	  
+	 { risk: "Inexperienced Project Manager",
+	  level: "Higher",
+	  tooLow: "You underestimated the risk of an inexperienced project manager.  You failed to meet blue-card legal requirements.  As your boss, I, Mr Kork, was sacked.  Without an income, I died, homeless.",
+	  
+	  person: "Kork"
+	 },
+	 { risk: "Staff turnover",
+	  level: "Lower",
+	  tooHigh: "You hired a backup contractor to cover you in case you quit the project that you alone were working on?  Why would you do this?  Your craziness sent the space school counsellor, Dr Ohora, crazy too. ",
+	  person: "Ohora"
+	 },
+	 { risk: "Scope creep",
+	  level: "Medium",
+	  tooLow: "You underestimated the amount of pressure the space principal would put you under to add in her space smoke detectors even though it wasn't in the contract.  The space principal sacked you.  Without smoke detectors, the space gym burned down, killing Coach McKey.",
+	  tooHigh: "Despite the fact the contract would help with scope creep, you hired a lawyer to manage scope.  This meant there were not enough funds for the additional smoke detectors that they wanted and the space gym burnt down killing Coach McKey.",
+	  person: "McKey"
+	 }
+	 ];
+	 
+/*
+		x		Dr 
+			x	Plasma-tech Scitty
+Inexperienced Prj. Mngr	Higher		x	Mr Kork
+*/
+
+function teamFeedback(teamResponse,answer) {
+	var tooHigh="☠";
+	var tooLow="💀";
+	var justRight="🙂✓";
+	if (answer.localeCompare(teamResponse)==0) {
+		return justRight;
+	}
+	if (answer.localeCompare("Medium")==0) {
+		if (teamResponse.localeCompare("Higher")==0) {
+			return tooHigh;
+		} else {
+			return tooLow;
+		}
+	}
+	if (answer.localeCompare("Lower")==0) {
+		if (teamResponse.localeCompare("Medium")==0) {
+			return tooHigh;
+		}
+	}
+	if (teamResponse.localeCompare("Higher")==0) {
+		return tooHigh;
+	}
+	return tooLow;
+}
+
+function score(riskNbr) {
+	
+  var row = document.getElementById("riskRow"+riskNbr);
+  var resultScoreRow = document.getElementById("resultScoreRow"+riskNbr);
+  var resultGeneralRow = document.getElementById("resultGeneralRow"+riskNbr);
+  resultGeneralRow.style.display="table-row";
+	resultScoreRow.style.display="table-row";
+  
+  for (team=1; team<teamsCnt+1; team++) {
+	var radiogroup = "r"+riskNbr+"t"+team; //r1t1
+	var response = document.querySelector('input[name="'+radiogroup+'"]:checked').value;
+	var feedback=teamFeedback(response,risks[riskNbr-1].level);
+	resultScoreRow.childNodes[team*2+1].innerHTML=feedback; // characters between table tds
+  }
+  
+  
+  
+	
+}
+
+function initTable() {
+	var tbl=document.getElementById("riskTable");
+	var row1 = document.getElementById("riskRow1");
+	var resultsGeneralRow1 = document.getElementById("resultGeneralRow1");
+	var resultScoreRow1 = document.getElementById("resultScoreRow1");
+	
+	// init risks
+	for (var i=0; i<risks.length; i++) {
+		var clone;//=row1;
+		if (i>0) {
+			clone=row1.cloneNode(true);
+			// update image
+			//clone.getElementsByClassName("person")[0].src=risks[i].person+".png";
+			var perImg=document.getElementById(risks[i].person);
+			var clonedPerImg=perImg.cloneNode(true);
+			var outerPerson=clone.getElementsByClassName("outerPerson")[0];
+			outerPerson.replaceChild(clonedPerImg,outerPerson.childNodes[0]);
+			clonedPerImg.style.display="block";
+			
+			clone.getElementsByClassName("riskName")[0].innerHTML=risks[i].risk;
+			
+			// update radio button names
+			for (t=1; t<teamsCnt+1; t++) {
+				clone.getElementsByClassName("t"+t)[0].name="r"+(i+1)+"t"+t;
+				clone.getElementsByClassName("t"+t)[1].name="r"+(i+1)+"t"+t;
+				clone.getElementsByClassName("t"+t)[2].name="r"+(i+1)+"t"+t;
+			}
+			
+			//clone.getElementsByClassName("button")[0].onclick=function () { score(i); };
+			clone.getElementsByClassName("button")[0].setAttribute("onClick","score("+(i+1)+");");
+			
+			tbl.appendChild(clone);
+			
+			clone=resultScoreRow1.cloneNode(true);
+			clone.id="resultScoreRow"+(i+1);
+			tbl.appendChild(clone);
+		}
+		
+		if (i==0) { 
+			clone=resultsGeneralRow1; 
+		} else {
+			clone=resultsGeneralRow1.cloneNode(true);
+		}
+		
+		if (risks[i].tooLow === undefined) {
+			clone.getElementsByClassName("outerTooLow")[0].style.display="none";
+		} else {
+			clone.getElementsByClassName("tooLow")[0].innerHTML=risks[i].tooLow;
+			clone.getElementsByClassName("outerTooLow")[0].style.display="inline-block";
+		}
+		if (risks[i].tooHigh === undefined) {
+			
+			clone.getElementsByClassName("outerTooHigh")[0].style.display="none";
+		} else {
+			clone.getElementsByClassName("tooHigh")[0].innerHTML=risks[i].tooHigh;
+			clone.getElementsByClassName("outerTooHigh")[0].style.display="inline-block";
+		}
+		clone.id="resultGeneralRow"+(i+1);
+		if (i>0) { tbl.appendChild(clone); }
+	}
+	
+	if (hideOnInit) {
+		for (i=0; i<risks.length; i++) {
+			var el=document.getElementById("resultGeneralRow"+(i+1));
+			el.style.display="none";
+			el=document.getElementById("resultScoreRow"+(i+1));
+			el.style.display="none";
+		}
+	}
+	
+	
+}
+
+</script>
+<div class="colourMargin" style="margin: 0; padding: 5px; background-color: rgb(74,74,74); color:white;">
+<div style="margin: 0; border: 5px solid red; padding: 5px;">
+<!--div class="scoreboard" style="right: 0; position:fixed; background-color: rgba(74,74,74,1); margin: 5px; border: 1px solid red;">
+Scores	Team 1: ♥♥♥♥♥	Team 2:	Team 3:	Team 4:
+</div-->
+
+<b style="font-size:200%">StarRisk AdVenture</b><br/>
+<img style="float:left;" width="80px" src="Kork.png"/>
+💬 Welcome aboard the AUS AdVenture.  I am Kork. In this episode you will brainstorm risks for an ICT project.   Will my crew survive your project?	
+<p/>					
+						
+Working alone, you are to install a network in the AdVenture Space Highschool. You are contracted to  install cabling, routers, managed switches, wireless access points, VoIP phones and POE IP security cameras.						
+<p/>						
+The following are some common ICT issues.  Assess each issue in the context of this project to determine if the risk is lower or higher than usual. If playing alone, just play as Team 1. Assess well, my friend, as our lives are in your hands.  As in any project, you will need a little bit of luck!
+<p/>
+<div style="display:flex; justify-content:center;">
+<table id="riskTable" style="color:white; border-spacing:5px; width:100%">
+	<tr>
+		<th>Issue</th><th>Team 1</th><th>Team 2</th><th>Team 3</th><th>Team 4</th><th></th><th></th>
+	</tr><tr align="center" id="riskRow1">
+	    <td style="width:15%;" class="riskName">Schedule flaws</td>
+		<td>Lower<input class="t1" type="radio" name="r1t1" value="Lower"><input class="t1" type="radio" name="r1t1" value="Medium"><input class="t1" type="radio" name="r1t1" value="Higher">Higher</td>
+		<td><input class="t2" type="radio" name="r1t2" value="Lower"><input class="t2" type="radio" name="r1t2" value="Medium"><input class="t2" type="radio" name="r1t2" value="Higher"></td>
+		<td><input class="t3" type="radio" name="r1t3" value="Lower"><input class="t3" type="radio" name="r1t3" value="Medium"><input class="t3" type="radio" name="r1t3" value="Higher"></td>
+		<td><input class="t4" type="radio" name="r1t4" value="Lower"><input class="t4"type="radio" name="r1t4" value="Medium"><input class="t4" type="radio" name="r1t4" value="Higher"></td>
+		<td><button class="button" onclick="score(1)">Scan Risk</button></td>
+		<td rowspan="1" class="outerPerson"><img width="50px" class="person" src="Spick.png"/></td>
+	</tr><tr id="resultScoreRow1">
+	    <th></th>
+		<td align="center" style="font-size: 150%; color: lightgreen;" id="r1t1result"></td>
+		<td align="center"  style="font-size: 150%; color: lightgreen;" id="r1t2result"></td>
+		<td align="center" style="font-size: 150%; color: lightgreen;" id="r1t3result"></td>
+		<td align="center"  style="font-size: 150%; color: lightgreen;" id="r1t4result"></td>
+	</tr><tr id="resultGeneralRow1">
+		<td></td>
+		<td id="r1result" colspan="6">
+		 <ul>
+			<li class="outerTooLow">💀 if too low: <span class="tooLow"></span></li>
+			<li class="outerTooHigh">☠ if too high: <span class="tooHigh"></span></li>
+		 </ul>
+		</td>
+	</tr>
+</table>
+</div>
+<div style="font-size: 50%">Images are <a href="https://www.deviantart.com/pixeloz">CC ND NC 3.0 By PixelOz</a></div>
+<img id="Kork" width="50px" style="display:none;" src="Kork.png"/>
+<img id="McKey" width="50px" style="display:none;" src="McKey.png"/>
+<img id="Ohora" width="50px" style="display:none;" src="Ohora.png"/>
+<img id="Scitty" width="50px" style="display:none;" src="Scitty.png"/>
+<img id="Spick" width="50px" style="display:none;" src="Spick.png"/>
+<script>
+initTable();
+</script>
+</div>
+</div>
