@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quokkamon-shell-v3'
+const CACHE_NAME = 'quokkamon-shell-v4'
 const APP_BASE = new URL('./', self.registration.scope)
 const APP_SHELL = [
   APP_BASE.href,
@@ -6,6 +6,9 @@ const APP_SHELL = [
   new URL('favicon.svg', APP_BASE).href,
   new URL('icon-192.svg', APP_BASE).href,
   new URL('icon-512.svg', APP_BASE).href,
+  new URL('icon-192.png', APP_BASE).href,
+  new URL('icon-512.png', APP_BASE).href,
+  new URL('icon-512-maskable.png', APP_BASE).href,
 ]
 
 self.addEventListener('install', (event) => {
